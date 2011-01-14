@@ -3,6 +3,42 @@ require 'rack/file'
 require 'rack/utils'
 
 module Rack
+  if "java" == RUBY_PLATFORM then
+    # use jcoffeescript implementation
+    require 'java'
+    require ::File.dirname(__FILE__) + '/../jcoffeescript-1.0.jar' 
+    class CoffeeScriptCompiler
+      def initialize(opts = {})
+        options = []
+        options << org.jcoffeescript.Option::BARE if opts[:nowrap] or opts[:bare]
+        @compiler = org.jcoffeescript.JCoffeeScriptCompiler.new options
+      end
+      
+      def compile(source)
+        @compiler.compile(source)
+      end
+    end
+  else
+    # use shell out to coffee implementation
+    require 'open3'
+    class CoffeeScriptCompiler
+      def initialize(opts = {})
+        @command = ['coffee', '-p']
+        @command.push('--bare') if opts[:nowrap] or opts[:bare]
+        @command.push('-e')
+        @command = @command.join(' ')
+      end
+      
+      def compile(source)
+        return Open3.popen3(@command) do |stdin, stdout, stderr|
+          stdin.puts source
+          stdin.close
+          stdout.read
+        end
+      end
+    end
+  end
+  
   class Coffee
     F = ::File
     
@@ -17,13 +53,13 @@ module Rack
       @server = opts[:static] ? Rack::File.new(root) : app
       @cache = opts[:cache]
       @ttl = opts[:ttl] || 86400
-      @command = ['coffee', '-p']
-      @command.push('--no-wrap') if opts[:nowrap]
-      @command = @command.join(' ')
+      @compiler = CoffeeScriptCompiler.new opts
     end
     
     def brew(coffee)
-      IO.popen("#{@command} #{coffee}")
+      script = ''
+      F.open(coffee).each_line { |line| script << line }
+      [@compiler.compile(script)]
     end
     
     def call(env)
