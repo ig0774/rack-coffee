@@ -73,7 +73,7 @@ module Rack
 
         if env['HTTP_IF_MODIFIED_SINCE']
           cached_time = Time.parse(env['HTTP_IF_MODIFIED_SINCE'])
-          if modified_time <= cached_time
+          if modified_time - cached_time < 1
             return [304, {}, 'Not modified']
           end
         end
